@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MHTML Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', 'Noto Sans KR', sans-serif;
+  background: #0d0d1a;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  overflow-x: hidden;
+}
+
+/* Animated background */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at 20% 20%, rgba(99,102,241,0.18) 0%, transparent 60%),
+              radial-gradient(ellipse at 80% 80%, rgba(168,85,247,0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.card {
+  width: 100%;
+  max-width: 600px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 24px;
+  padding: 36px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.logo h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #818cf8, #c084fc 50%, #60a5fa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+.logo p {
+  margin-top: 6px;
+  color: rgba(255,255,255,0.4);
+  font-size: 0.85rem;
+}
+
+/* Drop zone */
+.dropzone {
+  border: 2px dashed rgba(129,140,248,0.4);
+  border-radius: 18px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: rgba(99,102,241,0.03);
+  position: relative;
+}
+.dropzone:hover, .dropzone.hovering {
+  border-color: #818cf8;
+  background: rgba(99,102,241,0.08);
+}
+.dropzone-icon {
+  font-size: 2.8rem;
+  margin-bottom: 12px;
+  display: block;
+}
+.dropzone h3 { color: rgba(255,255,255,0.9); font-size: 1rem; font-weight: 600; }
+.dropzone p { color: rgba(255,255,255,0.35); font-size: 0.82rem; margin-top: 6px; }
+.dropzone .choose-btn {
+  margin-top: 14px;
+  display: inline-block;
+  padding: 8px 22px;
+  background: rgba(129,140,248,0.15);
+  border: 1px solid rgba(129,140,248,0.35);
+  border-radius: 10px;
+  color: #a5b4fc;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.dropzone .choose-btn:hover { background: rgba(129,140,248,0.28); }
+.file-chips {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 14px;
+}
+.chip {
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.4);
+}
+
+/* Options grid */
+.options {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.option-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 7px;
+}
+
+.format-group {
+  display: flex;
+  gap: 6px;
+}
+.fmt-btn {
+  flex: 1;
+  padding: 9px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.5);
+  font-family: 'Inter', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-align: center;
+}
+.fmt-btn:hover { border-color: rgba(129,140,248,0.5); color: #a5b4fc; }
+.fmt-btn.active {
+  background: rgba(99,102,241,0.25);
+  border-color: #818cf8;
+  color: #e0e7ff;
+}
+
+.filename-input {
+  width: 100%;
+  padding: 9px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: #e0e7ff;
+  font-size: 0.88rem;
+  font-family: 'Inter', sans-serif;
+  transition: border-color 0.2s;
+  outline: none;
+}
+.filename-input:focus { border-color: rgba(129,140,248,0.6); }
+.filename-input::placeholder { color: rgba(255,255,255,0.25); }
+
+/* Convert button */
+.convert-btn {
+  margin-top: 22px;
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  color: white;
+  font-size: 1rem;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.22s;
+  box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+  letter-spacing: 0.2px;
+}
+.convert-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(99,102,241,0.5); }
+.convert-btn:active { transform: translateY(0); }
+.convert-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* Status */
+.status {
+  margin-top: 18px;
+  min-height: 24px;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.status.idle { color: rgba(255,255,255,0.3); }
+.status.working { color: #a5b4fc; }
+.status.done { color: #86efac; }
+.status.error { color: #fca5a5; }
+
+/* Download btn */
+.download-btn {
+  margin-top: 14px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(134,239,172,0.35);
+  background: rgba(134,239,172,0.08);
+  color: #86efac;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: none;
+  text-align: center;
+  transition: all 0.2s;
+  font-family: 'Inter', sans-serif;
+}
+.download-btn:hover { background: rgba(134,239,172,0.15); transform: translateY(-1px); }
+
+input[type=file] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <h1>MHTML Converter</h1>
+    <p>Grok mhtml를 html · md · txt로 변환합니다</p>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <span class="dropzone-icon">📄</span>
+    <h3 id="drop-title">MHTML 파일을 여기에 드래그하세요</h3>
+    <p id="drop-sub">또는 아래 버튼을 클릭하여 파일을 선택하세요</p>
+    <div class="choose-btn" id="choose-btn">파일 선택</div>
+    <div class="file-chips">
+      <span class="chip">.mhtml</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept=".mhtml">
+
+  <div class="options">
+    <div>
+      <div class="option-label">출력 형식</div>
+      <div class="format-group">
+        <div class="fmt-btn active" data-fmt="html">HTML</div>
+        <div class="fmt-btn" data-fmt="md">MD</div>
+        <div class="fmt-btn" data-fmt="txt">TXT</div>
+      </div>
+    </div>
+    <div>
+      <div class="option-label">파일 이름</div>
+      <input type="text" id="filename-input" class="filename-input" placeholder="자동 (원본 파일명)">
+    </div>
+  </div>
+
+  <button class="convert-btn" id="convert-btn" disabled>변환하기</button>
+  <div class="status idle" id="status">파일을 선택한 후 변환하세요</div>
+  <a class="download-btn" id="download-btn">⬇ 파일 다운로드</a>
+</div>
+
+<script>
+const dropzone   = document.getElementById('dropzone');
+const fileInput  = document.getElementById('fileInput');
+const chooseBtn  = document.getElementById('choose-btn');
+const convertBtn = document.getElementById('convert-btn');
+const statusEl   = document.getElementById('status');
+const dlBtn      = document.getElementById('download-btn');
+const fnInput    = document.getElementById('filename-input');
+const fmtBtns    = document.querySelectorAll('.fmt-btn');
+
+let selectedFile = null;
+let selectedFmt  = 'html';
+let pendingBlob = null;
+let pendingFilename = '';
+let pendingMime = 'text/plain';
+let pendingObjectUrl = null;
+
+// --- Format selection ---
+fmtBtns.forEach(btn => {
+  btn.onclick = () => {
+    fmtBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedFmt = btn.dataset.fmt;
+    dlBtn.style.display = 'none';
+  };
+});
+
+// --- File selection ---
+dropzone.ondragover = e => { e.preventDefault(); dropzone.classList.add('hovering'); };
+dropzone.ondragleave = () => dropzone.classList.remove('hovering');
+dropzone.ondrop = e => {
+  e.preventDefault(); dropzone.classList.remove('hovering');
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+};
+dropzone.onclick = e => { if (!e.target.closest('#choose-btn')) return; fileInput.click(); };
+chooseBtn.onclick = e => { e.stopPropagation(); fileInput.click(); };
+fileInput.onchange = e => { if (e.target.files.length) setFile(e.target.files[0]); };
+
+function setFile(f) {
+  selectedFile = f;
+  const base = f.name.replace(/\.[^.]+$/, '');
+  document.getElementById('drop-title').textContent = '📎 ' + f.name;
+  document.getElementById('drop-sub').textContent   = (f.size / 1024).toFixed(1) + ' KB';
+  if (!fnInput.value) fnInput.placeholder = base;
+  convertBtn.disabled = false;
+  dlBtn.style.display = 'none';
+  setStatus('idle', '변환 버튼을 누르세요');
+}
+
+function setStatus(type, msg) {
+  statusEl.className = 'status ' + type;
+  statusEl.textContent = msg;
+}
+
+dlBtn.onclick = async e => {
+  if (!pendingBlob) return;
+  e.preventDefault();
+
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: pendingFilename,
+        types: [{
+          description: pendingMime === 'text/html' ? 'HTML file' : 'Text file',
+          accept: { [pendingMime]: ['.' + pendingFilename.split('.').pop()] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(pendingBlob);
+      await writable.close();
+      setStatus('done', `저장 완료: ${pendingFilename}`);
+      return;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        setStatus('error', '저장 실패: ' + err.message);
+      }
+      return;
+    }
+  }
+
+  if (pendingObjectUrl) URL.revokeObjectURL(pendingObjectUrl);
+  pendingObjectUrl = URL.createObjectURL(pendingBlob);
+  const tempLink = document.createElement('a');
+  tempLink.href = pendingObjectUrl;
+  tempLink.download = pendingFilename;
+  tempLink.click();
+};
+
+// --- Convert ---
+convertBtn.onclick = async () => {
+  if (!selectedFile) return;
+  convertBtn.disabled = true;
+  dlBtn.style.display = 'none';
+  setStatus('working', '변환 중...');
+
+  try {
+    const buffer = await selectedFile.arrayBuffer();
+    const raw    = new Uint8Array(buffer);
+    const text   = new TextDecoder('utf-8', { fatal: false }).decode(raw);
+
+    const htmlContent = extractHtmlFromMHTML(text);
+    const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
+
+    const title   = cleanTitle(doc.title || selectedFile.name.replace('.mhtml',''));
+    const turns   = extractGrok(doc);
+
+    const ext      = selectedFmt;
+    const basename = fnInput.value.trim() || selectedFile.name.replace(/\.[^.]+$/, '');
+    const filename = basename + '.' + ext;
+
+    let result;
+    if (ext === 'html')      result = buildHtml(title, turns);
+    else if (ext === 'md')   result = buildMarkdown(title, turns);
+    else                     result = buildTxt(turns);
+
+    const mimeType = ext === 'html' ? 'text/html' : ext === 'md' ? 'text/markdown' : 'text/plain';
+    pendingBlob = new Blob([result], { type: mimeType });
+    pendingFilename = filename;
+    pendingMime = pendingBlob.type || 'text/plain';
+    dlBtn.removeAttribute('href');
+    dlBtn.removeAttribute('download');
+    dlBtn.textContent = '⬇ ' + filename + ' 저장';
+    dlBtn.style.display = 'block';
+    setStatus('done', '변환 완료! 다운로드 버튼을 눌러 저장 위치를 선택하세요. (' + turns.length + ' turns)');
+  } catch (e) {
+    setStatus('error', '오류: ' + e.message);
+    console.error(e);
+  }
+  convertBtn.disabled = false;
+};
+
+// ──────────────────────────────────────────
+// MHTML PARSING
+// ──────────────────────────────────────────
+function extractHtmlFromMHTML(text) {
+  const m = text.match(/boundary="?([^";\s\r\n]+)"?/);
+  if (!m) throw new Error("MHTML boundary를 찾을 수 없습니다.");
+  const boundary = m[1];
+  const parts = text.split('--' + boundary);
+  let candidates = [];
+
+  for (const part of parts) {
+    if (!part.includes('Content-Type: text/html')) continue;
+    const hEnd = part.indexOf('\r\n\r\n');
+    if (hEnd === -1) continue;
+    let body = part.substring(hEnd + 4);
+    if (part.toLowerCase().includes('quoted-printable')) {
+      body = decodeQP(body);
+    }
+    candidates.push(body);
+  }
+  if (!candidates.length) throw new Error("HTML 본문을 찾을 수 없습니다.");
+  return candidates.sort((a,b) => b.length - a.length)[0];
+}
+
+function decodeQP(str) {
+  // QP → bytes, then UTF-8 decode
+  const cleaned = str.replace(/=\r?\n/g, '');
+  const bytes = [];
+  let i = 0;
+  while (i < cleaned.length) {
+    if (cleaned[i] === '=' && i + 2 < cleaned.length) {
+      const hex = cleaned.slice(i+1, i+3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) { bytes.push(parseInt(hex, 16)); i += 3; continue; }
+    }
+    bytes.push(cleaned.charCodeAt(i));
+    i++;
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(bytes));
+}
+
+// ──────────────────────────────────────────
+// GROK EXTRACTION (recursive DOM traversal)
+// ──────────────────────────────────────────
+const BOLD_CLASS = 'r-b88u0q';
+const NOISE = new Set(['script','style','button','svg','form','audio','img',
+  'annotation','math','semantics','mrow','mn','mi','mo','mtext','mspace',
+  'mtable','mtr','mtd','msub','msqrt','munder','mover','msup','moverunder',
+  'mpadded','mphantom','merror']);
+
+function extractGrok(doc) {
+  const msgs   = doc.querySelectorAll('.r-imh66m');
+  const turns  = [];
+  const seen   = new Set();
+
+  msgs.forEach(msg => {
+    const role    = msg.classList.contains('r-1kt6imw') ? 'user' : 'model';
+    const mathSeen = new Set();
+    let html = childrenToHtml(msg, mathSeen);
+    html = postProcess(html);
+    const plain = html.replace(/<[^>]+>/g, '').trim();
+    if (plain && !seen.has(plain)) { seen.add(plain); turns.push({ role, html, plain }); }
+  });
+  return turns;
+}
+
+function nodeToHtml(node, mathSeen) {
+  if (node.nodeType === 3) return node.textContent;
+  if (node.nodeType !== 1) return "";
+  const tag     = node.tagName.toLowerCase();
+  if (NOISE.has(tag)) return "";
+  const classes = node.classList;
+  const style   = node.getAttribute('style') || "";
+
+  // KaTeX
+  if (classes.contains('katex-mathml')) {
+    const ann = node.querySelector('annotation');
+    if (!ann) return "";
+    const formula = ann.textContent.trim();
+    const norm = formula.replace(/\s+/g,'');
+    if (mathSeen.has(norm)) return "";
+    mathSeen.add(norm);
+    let p = node.parentNode;
+    while (p) { if (p.classList && p.classList.contains('katex-display')) { return `<div class="math-block">$$ ${formula} $$</div>`; } p = p.parentNode; }
+    return ` \\(${formula}\\) `;
+  }
+  if (classes.contains('katex-html')) return "";
+  if (classes.contains('katex') || classes.contains('katex-display')) return childrenToHtml(node, mathSeen);
+
+  // Fallback raw_katex
+  if (classes.contains('raw_katex')) {
+    const formula = node.textContent.trim();
+    const norm = formula.replace(/\s+/g,'');
+    if (mathSeen.has(norm)) return "";
+    mathSeen.add(norm);
+    if (formula.length > 50 || formula.includes('\\begin')) {
+      return `<div class="math-block">$$ ${formula} $$</div>`;
+    }
+    return ` \\(${formula}\\) `;
+  }
+
+  // Heading (margin-top:1.5em is Grok's subheading style)
+  if (/margin-top:\s*1\.5em/.test(style)) {
+    const inner = childrenToHtml(node, mathSeen).trim();
+    return inner ? `<h3>${inner}</h3>\n` : "";
+  }
+  // Bold
+  if (classes.contains(BOLD_CLASS)) {
+    const inner = childrenToHtml(node, mathSeen).trim();
+    return inner ? `<b>${inner}</b>` : "";
+  }
+  // Structural
+  if (tag === 'br') return "<br>\n";
+  if (['ul','ol','pre','table','tr','thead','tbody'].includes(tag))
+    return `<${tag}>${childrenToHtml(node, mathSeen)}</${tag}>\n`;
+  if (tag === 'li')
+    return `<li>${childrenToHtml(node, mathSeen).trim()}</li>\n`;
+  if (['th','td'].includes(tag))
+    return `<${tag}>${childrenToHtml(node, mathSeen).trim()}</${tag}>`;
+  if (tag === 'p' || (tag === 'div' && /display:\s*block/.test(style))) {
+    const inner = childrenToHtml(node, mathSeen).trim();
+    return inner ? `<p>${inner}</p>\n` : "";
+  }
+  if (tag === 'a') return `<a href="${node.getAttribute('href')||'#'}" target="_blank">${childrenToHtml(node, mathSeen)}</a>`;
+  if (tag === 'code') {
+    const txt = node.textContent.trim();
+    if (txt.startsWith('\\') || (txt.includes('{') && txt.includes('\\'))) return "";
+    return `<code>${childrenToHtml(node, mathSeen)}</code>`;
+  }
+  return childrenToHtml(node, mathSeen);
+}
+function childrenToHtml(node, mathSeen) {
+  return Array.from(node.childNodes).map(c => nodeToHtml(c, mathSeen)).join('');
+}
+
+function postProcess(html) {
+  // ── Step 1: Stash all math regions so nothing touches them ───────────────
+  const store = [];
+  
+  // Helper: find matching \) for inline math, correctly handles \right) etc.
+  // A real closing \) has \  followed immediately by ), not a letter/macro.
+  function stashInline(s) {
+    let out = '';
+    let i = 0;
+    while (i < s.length) {
+      if (s[i] === '\\' && s[i+1] === '(') {
+        let j = i + 2;
+        let found = false;
+        while (j < s.length - 1) {
+          if (s[j] === '\\' && s[j+1] === ')') {
+            // Make sure it's \) and not \macroname)
+            // s[j] = '\', s[j+1] = ')' → this IS the closing delimiter
+            const formula = s.slice(i, j + 2); // includes \( and \)
+            store.push(formula);
+            out += `@@M${store.length-1}@@`;
+            i = j + 2;
+            found = true;
+            break;
+          }
+          j++;
+        }
+        if (!found) { out += s[i++]; }
+      } else {
+        out += s[i++];
+      }
+    }
+    return out;
+  }
+
+  // Stash display math blocks first (they may contain $$...$$)
+  html = html.replace(/<div class="math-block">[\s\S]*?<\/div>/g, m => { store.push(m); return `@@M${store.length-1}@@`; });
+  // Stash $$ display
+  html = html.replace(/\$\$[\s\S]*?\$\$/g, m => { store.push(m); return `@@M${store.length-1}@@`; });
+  // Stash inline \( ... \)  using smart scanner
+  html = stashInline(html);
+
+  // ── Step 2: Safe to apply only BOLD markdown (NOT italic - breaks L^* etc) ─
+  // Grok uses CSS class r-b88u0q for bold/italic, so markdown * is NEVER needed.
+  // Only convert **text** as a safety net, never *text* (too risky with formulas)
+  html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<b>$1</b>');
+
+  // ── Step 3: Restore math ──────────────────────────────────────────────────
+  for (let i = store.length - 1; i >= 0; i--)
+    html = html.replaceAll(`@@M${i}@@`, store[i]);
+
+  // ── Step 4: Spacing/cleanup ───────────────────────────────────────────────
+  html = html.replace(/<h3>\s*<\/h3>/g, '')
+             .replace(/<p>\s*<\/p>/g, '')
+             .replace(/(:)([\uAC00-\uD7A3A-Za-z(\\])/g, '$1<br>$2')
+             .replace(/([^\n])<h3>/g, '$1\n<h3>')
+             .replace(/([^\n])<div class="math-block">/g, '$1\n<div class="math-block">')
+             .replace(/<\/div>\s*([^\n<\s])/g, '</div>\n$1');
+  return html.trim();
+}
+
+function cleanTitle(t) {
+  return t.replace(/\(\d+\)\s?/g, '').replace(/ \/ X$/,'').replace(/ - (Claude|ChatGPT)$/,'').trim();
+}
+
+// ──────────────────────────────────────────
+// OUTPUT BUILDERS
+// ──────────────────────────────────────────
+function buildHtml(title, turns) {
+  const style = `
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sans-serif; background:#f0f2f5; color:#111; padding:30px 16px; line-height:1.8; font-size:15.5px; }
+.container { max-width:840px; margin:0 auto; }
+.turn { display:flex; gap:14px; margin-bottom:30px; }
+.user { flex-direction:row-reverse; }
+.avatar { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; flex-shrink:0; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.model .avatar { background:#111; }
+.user .avatar { background:#0ea5e9; }
+.bubble { max-width:80%; padding:18px 22px; border-radius:18px; box-shadow:0 2px 14px rgba(0,0,0,.07); overflow-wrap:break-word; word-break:break-word; }
+.model .bubble { background:#fff; border-bottom-left-radius:4px; border:1px solid #e0e0e0; }
+.user .bubble { background:#dbeafe; border-bottom-right-radius:4px; border:1px solid #bfdbfe; color:#1e3a5f; }
+.bubble p { margin:0 0 12px; }
+.bubble p:last-child { margin-bottom:0; }
+.bubble b { font-weight:700; color:#000; }
+.bubble h3 { font-size:1.05em; font-weight:700; color:#111; margin:20px 0 8px; border-left:3px solid #6366f1; padding-left:10px; }
+.bubble ul,.bubble ol { margin:8px 0 8px 24px; }
+.bubble li { margin-bottom:6px; }
+.bubble pre { background:#1e1e2e; color:#cdd6f4; padding:16px; border-radius:10px; overflow-x:auto; font-family:monospace; font-size:13px; margin:12px 0; }
+.bubble code { background:#f0f0f0; padding:2px 5px; border-radius:4px; font-size:13px; }
+.math-block { margin:14px auto; padding:10px 16px; background:#fafafa; border:1px solid #e8e8e8; border-radius:8px; overflow-x:auto; text-align:center; }
+`;
+  const mathjaxConf = `window.MathJax={tex:{inlineMath:[['$','$'],['\\\\(','\\\\)']],displayMath:[['$$','$$']],processEscapes:true},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};`;
+  const rows = turns.map(t => `<div class="turn ${t.role}"><div class="avatar">${t.role==='user'?'U':'AI'}</div><div class="bubble">${t.html}</div></div>`).join('');
+  return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
+<script>${mathjaxConf}<\/script><script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" defer><\/script>
+<style>${style}</style></head><body><div class="container">${rows}</div></body></html>`;
+}
+
+function buildMarkdown(title, turns) {
+  const lines = [`# ${title}`, ''];
+  turns.forEach(t => {
+    lines.push(`## ${t.role === 'user' ? '질문' : '답변'}`);
+    lines.push('');
+    lines.push(htmlToMarkdown(t.html));
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function buildTxt(turns) {
+  return turns.map(t => `[${t.role === 'user' ? 'User' : 'AI'}]\n${htmlToMarkdown(t.html).replace(/[*#`|]/g, '')}`).join('\n\n');
+}
+
+function htmlToMarkdown(html) {
+  let md = html;
+  // Block Math
+  md = md.replace(/<div class="math-block">\$\$([\s\S]*?)\$\$<\/div>/g, (_, formula) => `\n$$${formula}$$\n`);
+  md = md.replace(/<h3>(.*?)<\/h3>/g, '### $1\n');
+  md = md.replace(/<b>(.*?)<\/b>/g, '**$1**');
+  md = md.replace(/<i>(.*?)<\/i>/g, '*$1*');
+  md = md.replace(/<br\s*\/?>/g, '\n');
+  md = md.replace(/<p>([\s\S]*?)<\/p>/g, '$1\n\n');
+  
+  // Lists
+  md = md.replace(/<ul>([\s\S]*?)<\/ul>/g, '$1\n');
+  md = md.replace(/<ol>([\s\S]*?)<\/ol>/g, '$1\n');
+  md = md.replace(/<li>(.*?)<\/li>/g, '- $1\n');
+  
+  // Code
+  md = md.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, '```\n$1\n```\n');
+  md = md.replace(/<pre>([\s\S]*?)<\/pre>/g, '```\n$1\n```\n');
+  md = md.replace(/<code>([\s\S]*?)<\/code>/g, '`$1`');
+  
+  // Links
+  md = md.replace(/<a href="(.*?)".*?>(.*?)<\/a>/g, '[$2]($1)');
+  
+  // Tables
+  md = md.replace(/<table>([\s\S]*?)<\/table>/g, (match, content) => {
+    let tMd = '\n';
+    let rows = content.match(/<tr.*?>[\s\S]*?<\/tr>/g) || [];
+    rows.forEach((row, i) => {
+      let cols = row.match(/<t[hd].*?>([\s\S]*?)<\/t[hd]>/g) || [];
+      let rowStr = '| ' + cols.map(c => c.replace(/<[^>]+>/g, '').trim()).join(' | ') + ' |';
+      tMd += rowStr + '\n';
+      // Add separator after first row headers
+      if (i === 0) {
+        tMd += '|' + cols.map(() => '---').join('|') + '|\n';
+      }
+    });
+    return tMd + '\n';
+  });
+  
+  // Cleanup extra tags and newlines
+  return md.replace(/<[^>]+>/g, '')
+           .replace(/\n{3,}/g, '\n\n')
+           .replace(/&amp;/g, '&')
+           .replace(/&lt;/g, '<')
+           .replace(/&gt;/g, '>')
+           .trim();
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

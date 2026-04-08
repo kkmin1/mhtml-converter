@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unified MHTML Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./mhtml-converter.css">
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <h1>MHTML Converter</h1>
+    <p>GPT · Gemini · Grok MHTML을 자동 판별해서 html · md · txt로 변환합니다</p>
+    <div class="platform-pill" id="platform-pill">감지 대기 중</div>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <span class="dropzone-icon">📄</span>
+    <h3 id="drop-title">MHTML 파일을 여기에 드래그하세요</h3>
+    <p id="drop-sub">또는 아래 버튼을 클릭하여 MHTML 파일을 선택하세요</p>
+    <div class="choose-btn" id="choose-btn">파일 선택</div>
+    <div class="file-chips">
+      <span class="chip">.mhtml</span>
+      <span class="chip">Auto Detect</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept=".mhtml">
+
+  <div class="options">
+    <div>
+      <div class="option-label">출력 형식</div>
+      <div class="format-group">
+        <div class="fmt-btn active" data-fmt="html">HTML</div>
+        <div class="fmt-btn" data-fmt="md">MD</div>
+        <div class="fmt-btn" data-fmt="txt">TXT</div>
+      </div>
+    </div>
+    <div>
+      <div class="option-label">파일 이름</div>
+      <input type="text" id="filename-input" class="filename-input" placeholder="자동 (원본 파일명)">
+    </div>
+  </div>
+
+  <button class="convert-btn" id="convert-btn" disabled>변환하기</button>
+  <div class="status idle" id="status">파일을 선택한 후 변환하세요</div>
+  <a class="download-btn" id="download-btn">⬇ 파일 다운로드</a>
+</div>
+
+<script src="./mhtml-converter.js"></script>
+</body>
+</html>
