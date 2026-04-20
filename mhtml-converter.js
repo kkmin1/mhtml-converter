@@ -978,16 +978,7 @@ function buildMarkdown(title, turns, source) {
 
 function buildMarkdownExport(title, turns, source, assets, svgAssets = []) {
   const content = buildMarkdown(title, turns, source);
-  const imageAssets = collectHtmlAssets(turns, assets);
-  // Merge SVG assets with image assets, avoiding duplicates
-  const allAssets = [...imageAssets];
-  const usedNames = new Set(imageAssets.map(a => a.filename));
-  for (const svgAsset of svgAssets) {
-    if (!usedNames.has(svgAsset.filename)) {
-      allAssets.push(svgAsset);
-      usedNames.add(svgAsset.filename);
-    }
-  }
+  const allAssets = collectMarkdownAssets(content, assets, svgAssets);
   return {
     content,
     assets: allAssets
@@ -1000,6 +991,29 @@ function buildTxt(turns, source) {
     const body = htmlToMarkdown(t.html).replace(/[*#`|!]/g, '');
     return isWebpage ? body : `[${t.role === 'user' ? 'User' : 'AI'}]\n${body}`;
   }).join('\n\n');
+}
+
+function collectMarkdownAssets(content, assets, svgAssets = []) {
+  const used = new Map();
+
+  for (const match of content.matchAll(/src="(media\/[^"]+)"/gi)) {
+    const asset = findCollectedAsset(match[1], assets, svgAssets);
+    if (asset) used.set(asset.filename, asset);
+  }
+
+  for (const match of content.matchAll(/!\[[^\]]*\]\((media\/[^)\s]+)\)/gi)) {
+    const asset = findCollectedAsset(match[1], assets, svgAssets);
+    if (asset) used.set(asset.filename, asset);
+  }
+
+  return [...used.values()];
+}
+
+function findCollectedAsset(path, assets, svgAssets = []) {
+  const normalized = String(path || '').replace(/^\.?\//, '');
+  if (!normalized.startsWith('media/')) return null;
+  const filename = normalized.replace(/^media\//, '');
+  return assets.get(filename) || svgAssets.find(asset => asset.filename === filename) || null;
 }
 
 function htmlToMarkdown(html) {
