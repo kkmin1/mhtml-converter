@@ -1304,8 +1304,19 @@ function loadImage(src) {
 
 function isLikelyDecorativeImage(node, src = '') {
   const text = `${src} ${node.getAttribute('alt') || ''}`.toLowerCase();
-  if (/(^|[\/_-])(icon|logo|mark|favicon|emoji)([\/_.-]|$)/.test(text)) return true;
-  if (node.closest('a') && !node.closest('figure') && !node.closest('table') && !isLargeContentImage(node)) return true;
+  const classText = (node.getAttribute('class') || '').toLowerCase();
+  const role = (node.getAttribute('role') || '').toLowerCase();
+
+  if (/google\.com\/s2\/favicons/i.test(src)) return true;
+  if (/assets\.grok\.com\/users\/.+profile-picture/i.test(src)) return true;
+  if (/(^|[\/_-])(icon|logo|mark|favicon|emoji|avatar|profile-picture)([\/_.-]|$)/.test(text)) return true;
+  if (/(^|[\s_-])(pfp|avatar|presentation)([\s_-]|$)/.test(text)) return true;
+  if (/(company logo|powered by|onetrust)/.test(text)) return true;
+  if (role === 'presentation' || node.getAttribute('aria-hidden') === 'true') return true;
+  if (/(^|[\s-])(size-4|size-5|size-6|size-8|rounded-full|aspect-square)([\s-]|$)/.test(classText) && !isLargeContentImage(node)) return true;
+  if (node.closest('button, nav, header, aside, [data-sidebar], .action-buttons, .order-first, .query-bar, .ot-sdk-container')) return true;
+  if (node.closest('a') && !node.closest('figure, table, .inline-media-container, .response-content-markdown') && !isLargeContentImage(node)) return true;
+  if (!node.closest('figure, table, .inline-media-container, .response-content-markdown, .message-bubble') && !isLargeContentImage(node)) return true;
   return false;
 }
 
