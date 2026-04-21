@@ -12,6 +12,7 @@ let selectedFile = null;
 let selectedFmt = 'html';
 let pendingExport = null;
 let pendingObjectUrl = null;
+let selectedFileHandle = null;
 
 fmtBtns.forEach(btn => {
   btn.onclick = () => {
@@ -27,10 +28,19 @@ dropzone.ondragleave = () => dropzone.classList.remove('hovering');
 dropzone.ondrop = e => {
   e.preventDefault();
   dropzone.classList.remove('hovering');
-  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+  const file = e.dataTransfer.files && e.dataTransfer.files.length ? e.dataTransfer.files[0] : null;
+  if (!file) return;
+  const item = e.dataTransfer.items && e.dataTransfer.items.length ? e.dataTransfer.items[0] : null;
+  if (item && typeof item.getAsFileSystemHandle === 'function') {
+    item.getAsFileSystemHandle()
+      .then(handle => setFile(file, handle && handle.kind === 'file' ? handle : null))
+      .catch(() => setFile(file));
+    return;
+  }
+  setFile(file);
 };
-dropzone.onclick = e => { if (!e.target.closest('#choose-btn')) return; fileInput.click(); };
-chooseBtn.onclick = e => { e.stopPropagation(); fileInput.click(); };
+dropzone.onclick = e => { if (!e.target.closest('#choose-btn')) return; openFileChooser(); };
+chooseBtn.onclick = e => { e.stopPropagation(); openFileChooser(); };
 fileInput.onchange = e => { if (e.target.files.length) setFile(e.target.files[0]); };
 
 dlBtn.onclick = async e => {
@@ -59,7 +69,8 @@ convertBtn.onclick = async () => {
   setStatus('working', 'MHTML을 분석하고 있습니다...');
 
   try {
-    const text = await selectedFile.text();
+    const rawBytes = new Uint8Array(await selectedFile.arrayBuffer());
+    const text = bytesToLatin1(rawBytes);
     const parts = parseMhtml(text);
     const htmlContent = extractHtmlFromParts(parts);
     const assets = extractAssetsFromParts(parts);
@@ -75,7 +86,7 @@ convertBtn.onclick = async () => {
     const turns = source.extract(doc);
     if (!turns.length && source.id !== 'webpage') throw new Error(`${source.label} 메시지를 찾지 못했습니다.`);
 
-    const baseName = sanitizeFilename(fnInput.value.trim() || selectedFile.name.replace(/\.[^.]+$/, ''), 'converted');
+    const baseName = getOutputBaseName();
     pendingExport = buildExportPackage(selectedFmt, title, turns, baseName, source, assets, svgAssets);
 
     const totalAssets = pendingExport.assets.length;
@@ -93,8 +104,34 @@ convertBtn.onclick = async () => {
   convertBtn.disabled = false;
 };
 
-function setFile(file) {
+async function openFileChooser() {
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        types: [{
+          description: 'MHTML file',
+          accept: {
+            'multipart/related': ['.mhtml', '.mht'],
+            'message/rfc822': ['.mhtml', '.mht'],
+            'text/html': ['.mhtml', '.mht']
+          }
+        }]
+      });
+      if (!handle) return;
+      const file = await handle.getFile();
+      setFile(file, handle);
+      return;
+    } catch (err) {
+      if (err.name !== 'AbortError') console.warn('showOpenFilePicker failed, falling back to input', err);
+    }
+  }
+  fileInput.click();
+}
+
+function setFile(file, handle = null) {
   selectedFile = file;
+  selectedFileHandle = handle;
   pendingExport = null;
   const base = file.name.replace(/\.[^.]+$/, '');
   document.getElementById('drop-title').textContent = '📎 ' + file.name;
@@ -104,6 +141,14 @@ function setFile(file) {
   convertBtn.disabled = false;
   dlBtn.style.display = 'none';
   setStatus('idle', '변환 버튼을 누르면 서비스 종류를 자동 판별합니다');
+}
+
+function getOutputBaseName() {
+  const customName = fnInput.value.trim();
+  if (customName) return sanitizeFilename(customName, 'converted');
+
+  const sourceBase = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'converted';
+  return sanitizeFilename(sourceBase, 'converted');
 }
 
 function setStatus(type, msg) {
@@ -205,6 +250,14 @@ function latin1ToBytes(text) {
   const bytes = new Uint8Array(text.length);
   for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 255;
   return bytes;
+}
+
+function bytesToLatin1(bytes) {
+  let text = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    text += String.fromCharCode(...bytes.slice(i, i + 0x8000));
+  }
+  return text;
 }
 
 function bytesToText(bytes, charset) {
@@ -522,10 +575,10 @@ async function saveAsZip(exportData) {
   // Try showSaveFilePicker for nice save dialog
   if (typeof window.showSaveFilePicker === 'function') {
     try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: zipName,
-        types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }]
-      });
+      const handle = await window.showSaveFilePicker(buildSavePickerOptions(zipName, [{
+        description: 'ZIP archive',
+        accept: { 'application/zip': ['.zip'] }
+      }]));
       const writable = await handle.createWritable();
       await writable.write(zipBlob);
       await writable.close();
@@ -642,10 +695,10 @@ function crc32(data) {
 async function saveBlob(filename, blob, mime) {
   if (typeof window.showSaveFilePicker === 'function') {
     try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: mime === 'text/html' ? 'HTML file' : 'Text file', accept: { [mime]: ['.' + filename.split('.').pop()] } }]
-      });
+      const handle = await window.showSaveFilePicker(buildSavePickerOptions(filename, [{
+        description: mime === 'text/html' ? 'HTML file' : 'Text file',
+        accept: { [mime]: ['.' + filename.split('.').pop()] }
+      }]));
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -663,6 +716,12 @@ async function saveBlob(filename, blob, mime) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}
+
+function buildSavePickerOptions(suggestedName, types) {
+  const options = { suggestedName, types };
+  if (selectedFileHandle) options.startIn = selectedFileHandle;
+  return options;
 }
 
 function inlineAssets(html, assets) {
@@ -920,7 +979,86 @@ function postProcess(html, grokMode) {
   html = html.replace(/\*\*([\s\S]*?)\*\*/g, '<b>$1</b>');
   if (!grokMode) html = html.replace(/\*([^*\n]+)\*/g, '<i>$1</i>');
   for (let i = store.length - 1; i >= 0; i--) html = html.replaceAll(`@@M${i}@@`, store[i]);
-  return html.replace(/<h3>\s*<\/h3>/g, '').replace(/<p>\s*<\/p>/g, '').replace(/(:)([\uAC00-\uD7A3A-Za-z(\\])/g, '$1<br>$2').replace(/([^\n])<h3>/g, '$1\n<h3>').replace(/([^\n])<div class="math-block">/g, '$1\n<div class="math-block">').replace(/<\/div>\s*([^\n<\s])/g, '</div>\n$1').trim();
+  html = html.replace(/<h3>\s*<\/h3>/g, '').replace(/<p>\s*<\/p>/g, '').replace(/(:)([\uAC00-\uD7A3A-Za-z(\\])/g, '$1<br>$2').replace(/([^\n])<h3>/g, '$1\n<h3>').replace(/([^\n])<div class="math-block">/g, '$1\n<div class="math-block">').replace(/<\/div>\s*([^\n<\s])/g, '</div>\n$1').trim();
+  return normalizeSourceLinks(html);
+}
+
+function normalizeSourceLinks(html) {
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+
+  doc.querySelectorAll('p').forEach(p => {
+    while (p.parentElement && p.parentElement.tagName && p.parentElement.tagName.toLowerCase() === 'p') {
+      p.parentElement.replaceWith(...p.parentElement.childNodes);
+    }
+  });
+
+  Array.from(doc.body.querySelectorAll('p')).forEach(p => {
+    if (!isLinkOnlyBlock(p)) return;
+    const target = findMergeTarget(p);
+    if (!target) return;
+
+    appendInlineSourceLinks(target, extractLinksFromBlock(p, doc));
+    p.remove();
+  });
+
+  return doc.body.innerHTML
+    .replace(/<p>\s*<\/p>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function isLinkOnlyBlock(node) {
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('p').forEach(inner => inner.replaceWith(...inner.childNodes));
+  clone.querySelectorAll('a').forEach(anchor => anchor.replaceWith('LINKTOKEN'));
+  const text = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  return !!text && /^LINKTOKEN(?:\s*LINKTOKEN)*$/.test(text);
+}
+
+function findMergeTarget(node) {
+  let prev = node.previousElementSibling;
+  while (prev) {
+    const tag = prev.tagName.toLowerCase();
+    if (['p', 'li', 'blockquote'].includes(tag)) return prev;
+    if (['ul', 'ol'].includes(tag)) {
+      const items = prev.querySelectorAll('li');
+      return items.length ? items[items.length - 1] : null;
+    }
+    if (!prev.textContent.trim()) {
+      prev = prev.previousElementSibling;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
+function extractLinksFromBlock(node, doc) {
+  const links = [];
+  node.querySelectorAll('a[href]').forEach(anchor => {
+    const href = anchor.getAttribute('href') || '';
+    const text = (anchor.textContent || href).trim();
+    if (!href || !text) return;
+    const link = doc.createElement('a');
+    link.setAttribute('href', href);
+    if (!href.startsWith('media/')) {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noreferrer');
+    }
+    link.textContent = text;
+    links.push(link);
+  });
+  return links;
+}
+
+function appendInlineSourceLinks(target, links) {
+  if (!links.length) return;
+  const doc = target.ownerDocument || document;
+  target.appendChild(doc.createTextNode(' '));
+  links.forEach((link, index) => {
+    if (index > 0) target.appendChild(doc.createTextNode(', '));
+    target.appendChild(link);
+  });
 }
 
 function cleanTitle(title) {
