@@ -66,23 +66,22 @@ convertBtn.onclick = async () => {
   convertBtn.disabled = true;
   dlBtn.style.display = 'none';
   setPlatformPill('분석 중...');
-  setStatus('working', 'MHTML을 분석하고 있습니다...');
+  setStatus('working', '파일을 분석하고 있습니다...');
 
   try {
     const rawBytes = new Uint8Array(await selectedFile.arrayBuffer());
-    const text = bytesToLatin1(rawBytes);
-    const parts = parseMhtml(text);
-    const htmlContent = extractHtmlFromParts(parts);
-    const assets = extractAssetsFromParts(parts);
+    const input = parseSelectedInput(selectedFile, rawBytes);
+    const assets = input.assets;
+    const htmlContent = input.htmlContent;
     const doc = new DOMParser().parseFromString(htmlContent, 'text/html');
     rewriteAssetReferences(doc, assets);
     const svgAssets = replaceDynamicVisuals(doc, selectedFmt);
 
     const source = detectPlatform(doc);
     setPlatformPill(`감지됨: ${source.label}`);
-    setStatus('working', `${source.label} 형식으로 변환 중...`);
+    setStatus('working', `${source.label} ${input.inputLabel}을 변환 중...`);
 
-    const title = cleanTitle(doc.title || selectedFile.name.replace(/\.mhtml$/i, ''));
+    const title = cleanTitle(doc.title || selectedFile.name.replace(/\.(mhtml|mht|html?)$/i, ''));
     const turns = source.extract(doc);
     if (!turns.length && source.id !== 'webpage') throw new Error(`${source.label} 메시지를 찾지 못했습니다.`);
 
@@ -94,7 +93,7 @@ convertBtn.onclick = async () => {
       ? `⬇ ${pendingExport.filename} + media ${totalAssets}개 (ZIP)`
       : `⬇ ${pendingExport.filename} 저장`;
     dlBtn.style.display = 'block';
-    setStatus('done', `변환 완료: ${source.label}${totalAssets ? ` / 미디어 ${totalAssets}개` : ''}`);
+    setStatus('done', `변환 완료: ${source.label} ${input.inputLabel}${totalAssets ? ` / 미디어 ${totalAssets}개` : ''}`);
   } catch (err) {
     console.error(err);
     setPlatformPill('감지 실패');
@@ -110,11 +109,11 @@ async function openFileChooser() {
       const [handle] = await window.showOpenFilePicker({
         multiple: false,
         types: [{
-          description: 'MHTML file',
+          description: 'HTML or MHTML file',
           accept: {
+            'text/html': ['.html', '.htm'],
             'multipart/related': ['.mhtml', '.mht'],
-            'message/rfc822': ['.mhtml', '.mht'],
-            'text/html': ['.mhtml', '.mht']
+            'message/rfc822': ['.mhtml', '.mht']
           }
         }]
       });
@@ -140,7 +139,7 @@ function setFile(file, handle = null) {
   setPlatformPill('감지 대기 중');
   convertBtn.disabled = false;
   dlBtn.style.display = 'none';
-  setStatus('idle', '변환 버튼을 누르면 서비스 종류를 자동 판별합니다');
+  setStatus('idle', '변환 버튼을 누르면 파일 형식과 서비스 종류를 자동 판별합니다');
 }
 
 function getOutputBaseName() {
@@ -158,6 +157,43 @@ function setStatus(type, msg) {
 
 function setPlatformPill(text) {
   platformPill.textContent = text;
+}
+
+function parseSelectedInput(file, rawBytes) {
+  const text = bytesToLatin1(rawBytes);
+  const normalizedName = (file && file.name ? file.name : '').toLowerCase();
+  const isArchiveLikeName = /\.(mhtml|mht)$/.test(normalizedName);
+  const isMhtml = isArchiveLikeName || looksLikeMhtml(text);
+
+  if (isMhtml) {
+    const parts = parseMhtml(text);
+    return {
+      inputLabel: 'MHTML',
+      htmlContent: extractHtmlFromParts(parts),
+      assets: extractAssetsFromParts(parts)
+    };
+  }
+
+  return {
+    inputLabel: 'HTML',
+    htmlContent: bytesToText(rawBytes, detectHtmlCharset(text) || 'utf-8'),
+    assets: new Map()
+  };
+}
+
+function looksLikeMhtml(text) {
+  const head = text.slice(0, 4000);
+  return /content-type:\s*multipart\/related/i.test(head)
+    || /mime-version:\s*1\.0/i.test(head) && /boundary="?[^"\r\n;]+"?/i.test(head);
+}
+
+function detectHtmlCharset(text) {
+  const head = text.slice(0, 8000);
+  const metaCharset = head.match(/<meta[^>]+charset=["']?\s*([A-Za-z0-9._-]+)/i);
+  if (metaCharset) return metaCharset[1].trim();
+
+  const contentTypeCharset = head.match(/<meta[^>]+content=["'][^"']*charset=([A-Za-z0-9._-]+)/i);
+  return contentTypeCharset ? contentTypeCharset[1].trim() : null;
 }
 
 function parseMhtml(text) {
