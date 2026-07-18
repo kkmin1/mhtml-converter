@@ -2,7 +2,7 @@
 
 MHTML 파일을 `HTML`, `Markdown`, `TXT` 형식으로 변환하기 위한 웹 기반 도구입니다.
 
-ChatGPT, Gemini, Grok 등 LLM 서비스에서 저장한 MHTML 파일을 읽어 대화 내용을 정리된 문서 형태로 변환하는 데 사용할 수 있습니다.
+ChatGPT, Gemini, Grok, DeepSeek 등 LLM 서비스에서 저장한 MHTML 파일을 읽어 대화 내용을 정리된 문서 형태로 변환하는 데 사용할 수 있습니다. PGR21 같은 게시판 글도 본문/댓글을 정리해 변환할 수 있습니다.
 
 ## 개요
 
@@ -12,7 +12,8 @@ ChatGPT, Gemini, Grok 등 LLM 서비스에서 저장한 MHTML 파일을 읽어 �
 
 - MHTML 파일 자동 인식
 - 일반 HTML 파일 처리
-- ChatGPT / Gemini / Grok 계열 페이지 자동 감지
+- ChatGPT / Gemini / Grok / DeepSeek 계열 페이지 자동 감지
+- PGR21 게시글(본문 + 댓글) 자동 감지
 - HTML / Markdown / TXT 출력
 - HTML/Markdown 저장 시 필요한 이미지 자산을 `media` 폴더로 분리
 - 브라우저에서 바로 실행 가능
@@ -67,7 +68,8 @@ http://localhost:8000
 ## 용도
 
 - LLM 대화 내용을 읽기 쉬운 문서로 변환
-- ChatGPT / Gemini / Grok 대화 백업 정리
+- ChatGPT / Gemini / Grok / DeepSeek 대화 백업 정리
+- PGR21 게시글과 댓글을 문서로 백업 정리
 - HTML 문서를 Markdown이나 TXT로 변환
 - 웹페이지 저장본에서 본문만 추출
 - 이미지가 포함된 결과물을 HTML/Markdown + media 폴더 구조로 정리
@@ -102,6 +104,18 @@ ChatGPT는 긴 대화를 표시할 때 모든 메시지를 한꺼번에 HTML DOM
 - 대화 내용을 직접 복사하여 별도 문서로 저장
 - 브라우저 인쇄/PDF 저장
 - 공유 페이지가 전체 대화를 표시하는 경우 공유 페이지 저장
+
+## DeepSeek MHTML 저장 시 주의할 점
+
+DeepSeek 채팅 화면도 ChatGPT와 마찬가지로 메시지 목록을 가상 스크롤(virtualized list)로 렌더링합니다. 저장 시점에 화면에 보이지 않는 메시지는 DOM에서 아예 빠져 있을 수 있어, MHTML로 저장해도 대화 전체가 아니라 최근 몇 개의 메시지만 저장되는 경우가 흔합니다.
+
+DeepSeek의 "생각 중(推理/사고 과정)" 블록은 최종 답변과 별도로 렌더링되며, 이 변환기는 질문/답변 본문만 추출하고 사고 과정과 검색 알림 문구 등은 제외합니다.
+
+전체 대화를 보관하려면 대화 중간중간 스크롤하며 여러 번 저장하거나, DeepSeek의 공유 링크·데이터 내보내기 기능을 함께 활용하는 것이 좋습니다.
+
+## PGR21 변환 안내
+
+PGR21 게시글을 MHTML로 저장하면 본문(작성자/작성일 포함)과 댓글(작성자, 시간, 내용)을 분리해 추출합니다. 댓글이 여러 페이지로 나뉜 게시글은 저장 시점에 열려 있던 페이지의 댓글만 MHTML에 포함되므로, 전체 댓글을 보관하려면 각 댓글 페이지를 따로 저장해야 합니다.
 
 ## 한계
 

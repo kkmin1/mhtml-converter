@@ -820,6 +820,8 @@ function detectPlatform(doc) {
     { id: 'gpt', label: 'ChatGPT', extract: extractChatGPT, score: doc.querySelectorAll('[data-message-author-role]').length * 5 + doc.querySelectorAll('.markdown').length },
     { id: 'gemini', label: 'Gemini', extract: extractGemini, score: doc.querySelectorAll('user-query').length * 5 + doc.querySelectorAll('message-content').length * 4 + doc.querySelectorAll('[data-math]').length },
     { id: 'grok', label: 'Grok', extract: extractGrok, score: scoreGrokDocument(doc) },
+    { id: 'deepseek', label: 'DeepSeek', extract: extractDeepSeek, score: scoreDeepSeekDocument(doc) },
+    { id: 'pgr21', label: 'PGR21', extract: extractPgr21, score: scorePgr21Document(doc) },
     { id: 'webpage', label: '일반 웹페이지', extract: extractGenericWebpage, score: 1 }
   ].sort((a, b) => b.score - a.score)[0];
 }
@@ -907,6 +909,97 @@ function extractGrok(doc) {
     const html = postProcess(renderGenericNodeTree(msg, new Set(), { boldClass: 'r-b88u0q', treatDisplayBlockDiv: true, keepImages: true }), true);
     pushTurn(turns, seen, role, html);
   });
+  return turns;
+}
+
+function scoreDeepSeekDocument(doc) {
+  const messages = doc.querySelectorAll('.ds-message').length;
+  const answers = doc.querySelectorAll('.ds-markdown.ds-assistant-message-main-content').length;
+  const markdownBlocks = doc.querySelectorAll('.ds-markdown').length;
+  return (messages * 5) + (answers * 5) + markdownBlocks;
+}
+
+function extractDeepSeek(doc) {
+  const turns = [];
+  const seen = new Set();
+  doc.querySelectorAll('.ds-message').forEach(msg => {
+    const answer = msg.querySelector('.ds-markdown.ds-assistant-message-main-content');
+    if (answer) {
+      const clone = answer.cloneNode(true);
+      sanitizeChatNode(clone);
+      const html = postProcess(renderGenericNodeTree(clone, new Set(), { boldClass: null, treatDisplayBlockDiv: false, keepImages: true }), false);
+      pushTurn(turns, seen, 'model', html);
+      return;
+    }
+    if (msg.querySelector('.ds-markdown')) return;
+    const html = textToHtml(msg.textContent || '');
+    pushTurn(turns, seen, 'user', html);
+  });
+  return turns;
+}
+
+function scorePgr21Document(doc) {
+  const hasViewTable = doc.querySelector('.viewTable') ? 5 : 0;
+  const articleAreas = doc.querySelectorAll('.articleArea').length * 5;
+  const comments = doc.querySelectorAll('.vcm').length;
+  return hasViewTable + articleAreas + comments;
+}
+
+function getPgr21ArticleMeta(doc) {
+  const meta = { author: '', date: '' };
+  const writer = doc.querySelector('#view_writer');
+  if (writer) meta.author = (writer.textContent || '').trim();
+  doc.querySelectorAll('.viewTable tr').forEach(tr => {
+    const cells = tr.querySelectorAll('td');
+    if (cells.length < 2) return;
+    const label = (cells[0].textContent || '').trim();
+    if (label === 'Date') meta.date = (cells[1].textContent || '').trim();
+  });
+  return meta;
+}
+
+function extractPgr21Comments(doc) {
+  const comments = [];
+  doc.querySelectorAll('.vcm').forEach(node => {
+    const authorNode = node.querySelector('.ctName');
+    const bodyNode = node.querySelector('.cmemo');
+    if (!authorNode || !bodyNode) return;
+    const author = (authorNode.textContent || '').trim();
+    const timeNode = node.querySelector('.time');
+    const time = (timeNode ? (timeNode.getAttribute('title') || timeNode.textContent || '') : '').trim();
+    const clone = bodyNode.cloneNode(true);
+    sanitizeChatNode(clone);
+    const html = postProcess(renderGenericNodeTree(clone, new Set(), { boldClass: null, treatDisplayBlockDiv: false, keepImages: true }), false).trim();
+    if (!author && !html) return;
+    comments.push({ author, time, html });
+  });
+  return comments;
+}
+
+function extractPgr21(doc) {
+  const turns = [];
+  const seen = new Set();
+
+  const articleNode = doc.querySelector('.articleArea');
+  if (articleNode) {
+    const meta = getPgr21ArticleMeta(doc);
+    const clone = articleNode.cloneNode(true);
+    sanitizeChatNode(clone);
+    const bodyHtml = postProcess(renderGenericNodeTree(clone, new Set(), { boldClass: null, treatDisplayBlockDiv: true, keepImages: true }), false);
+    const metaParts = [meta.author && `작성자: ${escHtml(meta.author)}`, meta.date && `작성일: ${escHtml(meta.date)}`].filter(Boolean);
+    const metaLine = metaParts.length ? `<p class="pgr21-meta">${metaParts.join(' · ')}</p>\n` : '';
+    pushTurn(turns, seen, 'user', `${metaLine}${bodyHtml}`);
+  }
+
+  const comments = extractPgr21Comments(doc);
+  if (comments.length) {
+    const rows = comments.map(c => {
+      const label = [c.author && `<b>${escHtml(c.author)}</b>`, c.time && `<span class="pgr21-time">${escHtml(c.time)}</span>`].filter(Boolean).join(' ');
+      return `<p>${label}<br>${c.html}</p>`;
+    });
+    pushTurn(turns, seen, 'model', [`<p class="pgr21-meta">총 ${comments.length}개</p>`, ...rows].join('\n'));
+  }
+
   return turns;
 }
 
@@ -1139,21 +1232,23 @@ function appendInlineSourceLinks(target, links) {
 }
 
 function cleanTitle(title) {
-  return title.replace(/\(\d+\)\s?/g, '').replace(/ \/ X$/, '').replace(/ - (Claude|ChatGPT|Gemini|Grok)$/, '').replace(/^ChatGPT\s*[-:]\s*/, '').replace(/^Gemini\s*[-:]\s*/, '').replace(/^Grok\s*[-:]\s*/, '').trim();
+  return title.replace(/\u00A0/g, ' ').replace(/\(\d+\)\s?/g, '').replace(/ \/ X$/, '').replace(/ - (Claude|ChatGPT|Gemini|Grok|DeepSeek)$/, '').replace(/^ChatGPT\s*[-:]\s*/, '').replace(/^Gemini\s*[-:]\s*/, '').replace(/^Grok\s*[-:]\s*/, '').replace(/^DeepSeek\s*[-:]\s*/, '').replace(/^Pgr21\s*[-:]\s*/i, '').trim();
 }
 
 function buildHtml(title, turns, source) {
   const isWebpage = source.id === 'webpage';
+  const isPgr21 = source.id === 'pgr21';
+  const isWide = isWebpage || isPgr21;
   const style = `
 * { box-sizing:border-box; margin:0; padding:0; }
 body { font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sans-serif; background:#f0f2f5; color:#111; padding:30px 16px; line-height:1.8; font-size:15.5px; }
-.container { max-width:${isWebpage ? '920px' : '840px'}; margin:0 auto; }
+.container { max-width:${isWide ? '920px' : '840px'}; margin:0 auto; }
 .turn { display:flex; gap:14px; margin-bottom:30px; align-items:flex-start; }
 .user { flex-direction:row-reverse; }
-.avatar { width:${isWebpage ? '48px' : '40px'}; height:${isWebpage ? '48px' : '40px'}; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:${isWebpage ? '11px' : '13px'}; flex-shrink:0; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.avatar { width:${isWide ? '48px' : '40px'}; height:${isWide ? '48px' : '40px'}; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:${isWide ? '11px' : '13px'}; flex-shrink:0; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2); }
 .model .avatar { background:#111; }
 .user .avatar { background:#0ea5e9; }
-.bubble { max-width:${isWebpage ? '100%' : '80%'}; width:${isWebpage ? '100%' : 'auto'}; padding:18px 22px; border-radius:18px; box-shadow:0 2px 14px rgba(0,0,0,.07); overflow-wrap:anywhere; word-break:break-word; }
+.bubble { max-width:${isWide ? '100%' : '80%'}; width:${isWide ? '100%' : 'auto'}; padding:18px 22px; border-radius:18px; box-shadow:0 2px 14px rgba(0,0,0,.07); overflow-wrap:anywhere; word-break:break-word; }
 .model .bubble { background:#fff; border-bottom-left-radius:4px; border:1px solid #e0e0e0; }
 .user .bubble { background:#dbeafe; border-bottom-right-radius:4px; border:1px solid #bfdbfe; color:#1e3a5f; }
 .bubble p { margin:0 0 12px; }
@@ -1173,16 +1268,21 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sa
 .math-block { margin:14px auto; padding:10px 16px; background:#fafafa; border:1px solid #e8e8e8; border-radius:8px; overflow-x:auto; text-align:center; }
 `;
   const mathjaxConf = `window.MathJax={tex:{inlineMath:[['$','$'],['\\\\(','\\\\)']],displayMath:[['$$','$$']],processEscapes:true},options:{skipHtmlTags:['script','noscript','style','textarea','pre']}};`;
-  const rows = turns.map(t => `<div class="turn ${t.role}"><div class="avatar">${t.role === 'user' ? 'U' : (isWebpage ? 'WEB' : 'AI')}</div><div class="bubble">${t.html}</div></div>`).join('');
+  const rows = turns.map(t => {
+    const avatar = t.role === 'user' ? (isPgr21 ? '글' : 'U') : (isWebpage ? 'WEB' : (isPgr21 ? '댓글' : 'AI'));
+    return `<div class="turn ${t.role}"><div class="avatar">${avatar}</div><div class="bubble">${t.html}</div></div>`;
+  }).join('');
   return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escHtml(title)}</title><script>${mathjaxConf}<\/script><script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" defer><\/script><style>${style}</style></head><body><div class="container">${rows}</div></body></html>`;
 }
 
 function buildMarkdown(title, turns, source) {
   const lines = [`# ${title}`, ''];
   const isWebpage = source && source.id === 'webpage';
+  const isPgr21 = source && source.id === 'pgr21';
   turns.forEach(t => {
     if (!isWebpage) {
-      lines.push(`## ${t.role === 'user' ? '질문' : '답변'}`);
+      const heading = isPgr21 ? (t.role === 'user' ? '본문' : '댓글') : (t.role === 'user' ? '질문' : '답변');
+      lines.push(`## ${heading}`);
       lines.push('');
     }
     lines.push(htmlToMarkdown(t.html));
@@ -1202,9 +1302,12 @@ function buildMarkdownExport(title, turns, source, assets, svgAssets = []) {
 
 function buildTxt(turns, source) {
   const isWebpage = source && source.id === 'webpage';
+  const isPgr21 = source && source.id === 'pgr21';
   return turns.map(t => {
     const body = htmlToMarkdown(t.html).replace(/[*#`|!]/g, '');
-    return isWebpage ? body : `[${t.role === 'user' ? 'User' : 'AI'}]\n${body}`;
+    if (isWebpage) return body;
+    const label = isPgr21 ? (t.role === 'user' ? '본문' : '댓글') : (t.role === 'user' ? 'User' : 'AI');
+    return `[${label}]\n${body}`;
   }).join('\n\n');
 }
 
