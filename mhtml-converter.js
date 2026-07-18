@@ -352,6 +352,22 @@ function collectAssetKeys(location, contentId, filename) {
       const leaf = url.pathname.split('/').pop();
       if (leaf) keys.add(leaf);
     } catch {}
+
+    // Extract fname parameter if present (typical in Daum/Brunch/Kakao images)
+    const fnameMatch = location.match(/[?&]fname=([^&]+)/);
+    if (fnameMatch) {
+      const fnameVal = decodeURIComponentSafe(fnameMatch[1]);
+      keys.add(fnameVal);
+      keys.add(fnameVal.replace(/^\.?\//, ''));
+      try {
+        const u = new URL(fnameVal, 'https://mhtml.local/');
+        keys.add(u.href);
+        keys.add(u.pathname);
+        keys.add(u.pathname.replace(/^\//, ''));
+        const leaf = u.pathname.split('/').pop();
+        if (leaf) keys.add(leaf);
+      } catch {}
+    }
   }
   if (contentId) {
     keys.add(contentId);
@@ -522,8 +538,16 @@ function rewriteSrcSet(srcset, assets) {
 
 function resolveAssetPath(value, assets) {
   const raw = value.trim().replace(/^['"]|['"]$/g, '');
-  if (!raw || /^data:|^blob:|^https?:/i.test(raw)) return null;
-  const candidates = new Set([raw, decodeURIComponentSafe(raw), stripAngleBrackets(raw), raw.replace(/^cid:/i, ''), raw.replace(/^\.?\//, '')]);
+  if (!raw || /^data:|^blob:/i.test(raw)) return null;
+
+  const candidates = new Set([
+    raw,
+    decodeURIComponentSafe(raw),
+    stripAngleBrackets(raw),
+    raw.replace(/^cid:/i, ''),
+    raw.replace(/^\.?\//, '')
+  ]);
+
   try {
     const url = new URL(raw, 'https://mhtml.local/');
     candidates.add(url.href);
@@ -532,6 +556,23 @@ function resolveAssetPath(value, assets) {
     const leaf = url.pathname.split('/').pop();
     if (leaf) candidates.add(leaf);
   } catch {}
+
+  // Extract fname parameter if present in the URL (typical in Daum/Brunch/Kakao images)
+  const fnameMatch = raw.match(/[?&]fname=([^&]+)/);
+  if (fnameMatch) {
+    const fnameVal = decodeURIComponentSafe(fnameMatch[1]);
+    candidates.add(fnameVal);
+    candidates.add(fnameVal.replace(/^\.?\//, ''));
+    try {
+      const u = new URL(fnameVal, 'https://mhtml.local/');
+      candidates.add(u.href);
+      candidates.add(u.pathname);
+      candidates.add(u.pathname.replace(/^\//, ''));
+      const leaf = u.pathname.split('/').pop();
+      if (leaf) candidates.add(leaf);
+    } catch {}
+  }
+
   for (const candidate of candidates) {
     const asset = assets.get(candidate);
     if (asset) return asset.relPath;
@@ -1268,9 +1309,9 @@ function renderMarkdownNode(node) {
     const alt = node.getAttribute('alt') || '';
     if (!src || isLikelyDecorativeImage(node, src)) return '';
     // Always allow media/ refs (extracted SVGs and images)
-    if (src.startsWith('media/')) return `<img src="${escAttr(src)}" alt="${escAttr(alt)}" style="max-width: 100%; height: auto;">\n\n`;
+    if (src.startsWith('media/')) return `![${escapeMarkdownImageAlt(alt)}](${src})\n\n`;
     if (/^data:image\//i.test(src) && !node.hasAttribute('data-generated-visual')) return '';
-    return `<img src="${escAttr(src)}" alt="${escAttr(alt)}" style="max-width: 100%; height: auto;">\n\n`;
+    return `![${escapeMarkdownImageAlt(alt)}](${src})\n\n`;
   }
   if (tag === 'ul') return renderMarkdownList(node, '-');
   if (tag === 'ol') return renderMarkdownList(node, '1.');
@@ -1303,9 +1344,9 @@ function renderMarkdownInline(node) {
       const src = normalizeMarkdownImageSrc(child.getAttribute('src') || '');
       const alt = child.getAttribute('alt') || '';
       if (!src || isLikelyDecorativeImage(child, src)) return '';
-      if (src.startsWith('media/')) return `<img src="${escAttr(src)}" alt="${escAttr(alt)}" style="max-width: 100%; height: auto;">`;
+      if (src.startsWith('media/')) return `![${escapeMarkdownImageAlt(alt)}](${src})`;
       if (/^data:image\//i.test(src) && !child.hasAttribute('data-generated-visual')) return '';
-      return `<img src="${escAttr(src)}" alt="${escAttr(alt)}" style="max-width: 100%; height: auto;">`;
+      return `![${escapeMarkdownImageAlt(alt)}](${src})`;
     }
     if (tag === 'div' && child.classList.contains('math-block')) return child.textContent.trim();
     return renderMarkdownInline(child);
@@ -1497,7 +1538,8 @@ function isLikelyDecorativeImage(node, src = '') {
   const inInlineMedia = !!node.closest('.inline-media-container');
   const inFigure = !!node.closest('figure');
   const inTable = !!node.closest('table');
-  const inMainContent = !!node.closest('.response-content-markdown, .message-bubble');
+  const isChat = !!node.ownerDocument.querySelector('[data-message-author-role], user-query, message-content, [id^="response-"], .message-bubble');
+  const inMainContent = !isChat || !!node.closest('.response-content-markdown, .message-bubble, .markdown, .model-response-text, .response-content, .message-content, [data-message-author-role], user-query');
   const isLarge = isLargeContentImage(node);
   const isGeneratedVisual = node.hasAttribute('data-generated-visual');
 
@@ -1520,9 +1562,18 @@ function isLikelyDecorativeImage(node, src = '') {
 }
 
 function isLargeContentImage(node) {
-  const width = parseDimension(node.getAttribute('width') || node.style.width || '');
-  const height = parseDimension(node.getAttribute('height') || node.style.height || '');
-  return width >= 240 || height >= 160;
+  const widthAttr = node.getAttribute('width') || node.style.width || '';
+  const heightAttr = node.getAttribute('height') || node.style.height || '';
+  if (!widthAttr && !heightAttr) return true;
+
+  // If it's a percentage (e.g. 100%), it's responsive and likely a content image, not a small icon
+  const isPercentWidth = String(widthAttr).includes('%');
+  const isPercentHeight = String(heightAttr).includes('%');
+
+  const width = isPercentWidth ? 0 : parseDimension(widthAttr);
+  const height = isPercentHeight ? 0 : parseDimension(heightAttr);
+
+  return (width === 0 || width >= 240) && (height === 0 || height >= 160);
 }
 
 function sanitizeFilename(name, fallback = 'file') {
